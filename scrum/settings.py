@@ -67,7 +67,7 @@ DATABASES = {
 # Internationalization
 # https://docs.djangoproject.com/en/1.7/topics/i18n/
 
-LANGUAGE_CODE = 'en-us'
+LANGUAGE_CODE = 'pt-br'
 
 TIME_ZONE = 'UTC'
 
@@ -82,3 +82,10 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/1.7/howto/static-files/
 
 STATIC_URL = '/static/'
+
+WATERCOOLER_SERVER = os.environ.get('WATERCOOLER_SERVER', 'localhost:8080')
+
+WATERCOOLER_SECURE = bool(os.environ.get('WATERCOOLER_SECURE', ''))
+
+WATERCOOLER_SECRET = os.environ.get('WATERCOOLER_SECRET',
+                                    'pTyz1dzMeVUGrb0Su4QXsP984qTlvQRHpFnnlHuH')
