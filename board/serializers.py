@@ -1,6 +1,8 @@
 from datetime import date
 
+from django.conf import settings
 from django.contrib.auth import get_user_model
+from django.core.signing import TimestampSigner
 from django.utils.translation import ugettext_lazy as _
 
 from rest_framework import serializers
@@ -14,7 +16,7 @@ User = get_user_model()
 
 class SprintSerializer(serializers.ModelSerializer):
 
-    links = serializers.SerializerMethodField('get_links')
+    links = serializers.SerializerMethodField()
 
     class Meta:
         model = Sprint
@@ -22,11 +24,18 @@ class SprintSerializer(serializers.ModelSerializer):
 
     def get_links(self, obj):
         request = self.context['request']
+        signer = TimestampSigner(settings.WATERCOOLER_SECRET)
+        channel = signer.sign(obj.pk)
         return {
             'self': reverse('sprint-detail',
                             kwargs={'pk': obj.pk}, request=request),
             'tasks': reverse('task-list',
                              request=request) + '?sprint={}'.format(obj.pk),
+            'channel': '{proto}://{server}/socket?channel={channel}'.format(
+                proto='wss' if settings.WATERCOOLER_SECURE else 'ws',
+                server=settings.WATERCOOLER_SERVER,
+                channel=channel,
+            ),
         }
 
     def validate_end(self, attrs, source):
@@ -44,8 +53,8 @@ class TaskSerializer(serializers.ModelSerializer):
     assigned = serializers.SlugRelatedField(
         slug_field=User.USERNAME_FIELD, required=False,
         queryset=User.objects.all())
-    status_display = serializers.SerializerMethodField('get_status_display')
-    links = serializers.SerializerMethodField('get_links')
+    status_display = serializers.SerializerMethodField()
+    links = serializers.SerializerMethodField()
 
     class Meta:
         model = Task
@@ -110,7 +119,7 @@ class TaskSerializer(serializers.ModelSerializer):
 class UserSerializer(serializers.ModelSerializer):
 
     full_name = serializers.CharField(source='get_full_name', read_only=True)
-    links = serializers.SerializerMethodField('get_links')
+    links = serializers.SerializerMethodField()
 
     class Meta:
         model = User

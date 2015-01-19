@@ -1,6 +1,12 @@
+import hashlib
+import requests
+
+from django.conf import settings
+from django.core.signing import TimestampSigner
 from django.contrib.auth import get_user_model
 
 from rest_framework import authentication, permissions, viewsets, filters
+from rest_framework.renderers import JSONRenderer
 
 from .forms import SprintFilter, TaskFilter
 from .models import Sprint, Task
@@ -30,6 +36,65 @@ class DefaultsMixin(object):
         filters.SearchFilter,
         filters.OrderingFilter,
     )
+
+
+class UpdateHookMixin(object):
+
+    """Mixin class to send update information to the websocket server."""
+
+    def _build_hook_url(self, obj):
+        if isinstance(obj, User):
+            model = 'user'
+        else:
+            model = obj.__class__.__name__.lower()
+        return '{}://{}/{}/{}'.format(
+            'https' if settings.WATERCOOLER_SECURE else 'http',
+            settings.WATERCOOLER_SERVER, model, obj.pk)
+
+    def _send_hook_request(self, obj, method):
+        url = self._build_hook_url(obj)
+        if method in ('POST', 'PUT'):
+            # Build the body
+            serializer = self.get_serializer(obj)
+            renderer = JSONRenderer()
+            context = {'request': self.request}
+            body = renderer.render(serializer.data, renderer_context=context)
+        else:
+            body = None
+        headers = {
+            'content-type': 'application/json',
+            'X-Signature': self._build_hook_signature(method, url, body)
+        }
+        try:
+            response = requests.request(method, url,
+                                        data=body, timeout=0.5,
+                                        headers=headers)
+            response.raise_for_status()
+        except requests.exceptions.ConnectionError:
+            # Host could not be resolved or the connection was refused
+            pass
+        except requests.exceptions.Timeout:
+            # Request timed out
+            pass
+        except requests.exceptions.RequestException:
+            # Server responded with 4XX or 5XX status code
+            pass
+
+    def _build_hook_signature(self, method, url, body):
+        signer = TimestampSigner(settings.WATERCOOLER_SECRET)
+        value = '{method}:{url}:{body}'.format(
+            method=method.lower(),
+            url=url,
+            body=hashlib.sha256(body or b'').hexdigest()
+        )
+        return signer.sign(value)
+
+    def post_save(self, obj, created=False):
+        method = 'POST' if created else 'PUT'
+        self._send_hook_request(obj, method)
+
+    def pre_delete(self, obj):
+        self._send_hook_request(obj, 'DELETE')
 
 
 class SprintViewSet(DefaultsMixin, viewsets.ModelViewSet):
